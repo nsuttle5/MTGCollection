@@ -33,6 +33,12 @@ class UserSessionManager {
     }
 
     displayUserInfo() {
+        // Remove existing user info to prevent duplicates
+        const existingUserInfo = document.querySelector('.user-info');
+        if (existingUserInfo) {
+            existingUserInfo.remove();
+        }
+        
         const userInfo = document.createElement('div');
         userInfo.className = 'user-info';
         userInfo.innerHTML = `
@@ -57,10 +63,11 @@ class UserSessionManager {
 
     clearSession() {
         sessionStorage.removeItem('mtg_session');
-        // Clear guest data if in guest mode
+        // Clear user-specific data if in guest mode
         if (this.session && this.session.isGuest) {
-            localStorage.removeItem('mtgCollection');
-            localStorage.removeItem('mtgDecks');
+            localStorage.removeItem(this.getUserStorageKey('mtgCollection'));
+            localStorage.removeItem(this.getUserStorageKey('mtgDecks'));
+            localStorage.removeItem(this.getUserStorageKey('storage_locations'));
         }
     }
 
@@ -78,9 +85,25 @@ class UserSessionManager {
 
     getUserStorageKey(key) {
         if (this.isGuest()) {
+            console.log(`Guest mode: Using storage key "${key}"`);
             return key; // Guest mode uses regular localStorage keys
         }
-        return `${key}_${this.session.currentUser.id}`;
+        const userKey = `${key}_${this.session.currentUser.id}`;
+        console.log(`User mode: Using storage key "${userKey}" for user ${this.session.currentUser.username}`);
+        return userKey;
+    }
+
+    debugStorage() {
+        console.log('=== Storage Debug Info ===');
+        console.log('Current session:', this.session);
+        console.log('Is guest:', this.isGuest());
+        console.log('Current user:', this.getCurrentUser());
+        console.log('LocalStorage keys:', Object.keys(localStorage));
+        console.log('SessionStorage keys:', Object.keys(sessionStorage));
+        console.log('Collection key:', this.getUserStorageKey('mtgCollection'));
+        console.log('Decks key:', this.getUserStorageKey('mtgDecks'));
+        console.log('Storage locations key:', this.getUserStorageKey('storage_locations'));
+        console.log('=== End Debug Info ===');
     }
 }
 
@@ -89,6 +112,7 @@ class UserSessionManager {
 class MTGCollectionManager {
     constructor() {
         this.userManager = new UserSessionManager();
+        this.userManager.debugStorage(); // Debug storage on initialization
         this.collection = this.loadCollection();
         this.decks = this.loadDecks();
         this.currentPage = 'collection';
@@ -311,23 +335,269 @@ class MTGCollectionManager {
         this.displayCollection();
         this.displayStorage();
         this.displayDecks();
+        this.displayUsers();
+    }
+
+    displayUsers() {
+        const currentUser = this.userManager.getCurrentUser();
+        const isGuest = this.userManager.isGuest();
+        
+        // Update current user info
+        document.getElementById('current-user-name').textContent = currentUser ? currentUser.username : 'Unknown User';
+        document.getElementById('current-user-status').textContent = isGuest ? 'Guest Mode' : 'Registered User';
+        document.getElementById('current-user-avatar').textContent = currentUser ? currentUser.username.charAt(0).toUpperCase() : 'U';
+        
+        // Update user statistics
+        const totalCards = this.collection.filter(card => card.owned).reduce((sum, card) => sum + card.quantity, 0);
+        const collectionValue = this.collection.filter(card => card.owned).reduce((sum, card) => sum + (card.tcgPrice * card.quantity), 0);
+        const deckCount = this.decks.length;
+        
+        document.getElementById('user-total-cards').textContent = totalCards.toString();
+        document.getElementById('user-collection-value').textContent = `$${collectionValue.toFixed(2)}`;
+        
+        // Display friends and trade offers
+        this.displayFriends();
+        this.updateTradeOffersDisplay();
+        
+        // Setup user action buttons
+        this.setupUserActions();
+    }
+
+    displayRegisteredUsers() {
+        const usersList = document.getElementById('users-list');
+        usersList.innerHTML = '';
+        
+        // Load users from localStorage (same as auth.js)
+        const users = JSON.parse(localStorage.getItem('mtg_users') || '[]');
+        
+        users.forEach(user => {
+            const userElement = document.createElement('div');
+            userElement.className = 'user-item';
+            userElement.innerHTML = `
+                <div class="user-info">
+                    <div class="user-avatar-small">
+                        <span>${user.username.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div class="user-details-small">
+                        <h4>${user.username}</h4>
+                        <p>Created: ${new Date(user.createdAt).toLocaleDateString()}</p>
+                    </div>
+                </div>
+                <div class="user-actions-small">
+                    <button onclick="mtgCollection.switchToUser('${user.id}')" class="switch-user-btn">Switch</button>
+                </div>
+            `;
+            usersList.appendChild(userElement);
+        });
+    }
+
+    setupUserActions() {
+        // Remove existing event listeners to avoid duplicates
+        const exportBtn = document.getElementById('export-collection-btn');
+        const importBtn = document.getElementById('import-collection-btn');
+        const clearBtn = document.getElementById('clear-collection-btn');
+        const switchBtn = document.getElementById('switch-user-btn');
+        
+        if (exportBtn) {
+            exportBtn.replaceWith(exportBtn.cloneNode(true));
+            document.getElementById('export-collection-btn').addEventListener('click', () => this.exportCollection());
+        }
+        
+        if (importBtn) {
+            importBtn.replaceWith(importBtn.cloneNode(true));
+            document.getElementById('import-collection-btn').addEventListener('click', () => this.importCollection());
+        }
+        
+        if (clearBtn) {
+            clearBtn.replaceWith(clearBtn.cloneNode(true));
+            document.getElementById('clear-collection-btn').addEventListener('click', () => this.clearCollection());
+        }
+        
+        if (switchBtn) {
+            switchBtn.replaceWith(switchBtn.cloneNode(true));
+            document.getElementById('switch-user-btn').addEventListener('click', () => this.switchUser());
+        }
+    }
+
+    exportCollection() {
+        const exportData = {
+            collection: this.collection,
+            decks: this.decks,
+            storageLocations: this.getStorageLocations().filter(loc => loc.isCustom),
+            exportDate: new Date().toISOString(),
+            version: '1.0'
+        };
+        
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `mtg-collection-${new Date().toISOString().split('T')[0]}.json`;
+        link.click();
+        
+        URL.revokeObjectURL(url);
+    }
+
+    importCollection() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importData = JSON.parse(e.target.result);
+                        
+                        if (confirm('This will replace your current collection. Are you sure?')) {
+                            this.collection = importData.collection || [];
+                            this.decks = importData.decks || [];
+                            
+                            // Import custom storage locations
+                            if (importData.storageLocations) {
+                                this.saveStorageLocations(importData.storageLocations);
+                            }
+                            
+                            this.saveCollection();
+                            this.saveDecks();
+                            this.displayCollection();
+                            this.displayStorage();
+                            this.displayDecks();
+                            this.displayUsers();
+                            
+                            alert('Collection imported successfully!');
+                        }
+                    } catch (error) {
+                        alert('Error importing collection: Invalid file format');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        };
+        input.click();
+    }
+
+    clearCollection() {
+        if (confirm('Are you sure you want to clear your entire collection? This cannot be undone.')) {
+            this.collection = [];
+            this.decks = [];
+            this.saveCollection();
+            this.saveDecks();
+            this.displayCollection();
+            this.displayStorage();
+            this.displayDecks();
+            this.displayUsers();
+            alert('Collection cleared successfully!');
+        }
+    }
+
+    switchUser() {
+        if (confirm('Switch to a different user account?')) {
+            window.location.href = 'auth.html';
+        }
+    }
+
+    switchToUser(userId) {
+        if (confirm('Switch to this user account?')) {
+            // Create a new session for the selected user
+            const users = JSON.parse(localStorage.getItem('mtg_users') || '[]');
+            const user = users.find(u => u.id === userId);
+            
+            if (user) {
+                const sessionData = {
+                    currentUser: user,
+                    isGuest: false,
+                    loginTime: new Date().toISOString()
+                };
+                sessionStorage.setItem('mtg_session', JSON.stringify(sessionData));
+                window.location.reload();
+            }
+        }
     }
 
     setupEventListeners() {
         console.log('Setting up event listeners...');
         
         // Tab navigation
-        document.getElementById('collection-tab').addEventListener('click', () => this.switchPage('collection'));
-        document.getElementById('storage-tab').addEventListener('click', () => this.switchPage('storage'));
-        document.getElementById('decks-tab').addEventListener('click', () => this.switchPage('decks'));
+        const collectionTab = document.getElementById('collection-tab');
+        const storageTab = document.getElementById('storage-tab');
+        const decksTab = document.getElementById('decks-tab');
+        const usersTab = document.getElementById('users-tab');
+        const profileTab = document.getElementById('profile-tab');
+        
+        console.log('Tab elements found:', { collectionTab, storageTab, decksTab, usersTab, profileTab });
+        
+        if (collectionTab) {
+            collectionTab.addEventListener('click', () => {
+                console.log('Collection tab clicked');
+                this.switchPage('collection');
+            });
+        }
+        
+        if (storageTab) {
+            storageTab.addEventListener('click', () => {
+                console.log('Storage tab clicked');
+                this.switchPage('storage');
+            });
+        }
+        
+        if (decksTab) {
+            decksTab.addEventListener('click', () => {
+                console.log('Decks tab clicked');
+                this.switchPage('decks');
+            });
+        }
+        
+        if (usersTab) {
+            usersTab.addEventListener('click', () => {
+                console.log('Users tab clicked');
+                this.switchPage('users');
+            });
+        }
+        
+        if (profileTab) {
+            profileTab.addEventListener('click', () => {
+                console.log('Profile tab clicked');
+                this.switchPage('profile');
+            });
+        }
 
         // Storage page
-        document.getElementById('back-to-storage-btn').addEventListener('click', () => this.showStorageOverview());
+        const backToStorageBtn = document.getElementById('back-to-storage-btn');
+        if (backToStorageBtn) {
+            backToStorageBtn.addEventListener('click', () => this.showStorageOverview());
+        }
 
         // Collection page
-        document.getElementById('search-btn').addEventListener('click', () => this.searchCards());
-        document.getElementById('clear-search-btn').addEventListener('click', () => this.clearSearch());
-        document.getElementById('advanced-search-btn').addEventListener('click', () => this.toggleAdvancedSearch());
+        const searchBtn = document.getElementById('search-btn');
+        const clearSearchBtn = document.getElementById('clear-search-btn');
+        const advancedSearchBtn = document.getElementById('advanced-search-btn');
+        
+        console.log('Search buttons found:', { searchBtn, clearSearchBtn, advancedSearchBtn });
+        
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                console.log('Search button clicked');
+                this.searchCards();
+            });
+        }
+        
+        if (clearSearchBtn) {
+            clearSearchBtn.addEventListener('click', () => {
+                console.log('Clear search button clicked');
+                this.clearSearch();
+            });
+        }
+        
+        if (advancedSearchBtn) {
+            advancedSearchBtn.addEventListener('click', () => {
+                console.log('Advanced search button clicked');
+                this.toggleAdvancedSearch();
+            });
+        }
         document.getElementById('adv-search-btn').addEventListener('click', () => this.performAdvancedSearch());
         document.getElementById('adv-clear-btn').addEventListener('click', () => this.clearAdvancedSearch());
         document.getElementById('adv-close-btn').addEventListener('click', () => this.closeAdvancedSearch());
@@ -403,7 +673,167 @@ class MTGCollectionManager {
                 this.addStorageLocationFromPage();
             }
         });
+
+        // Users page event listeners will be set up in setupUserActions()
         
+        // Friend system and trading event listeners
+        document.getElementById('search-friend-btn').addEventListener('click', () => {
+            const username = document.getElementById('friend-search-input').value.trim();
+            if (username) {
+                this.searchFriend(username);
+            }
+        });
+        
+        document.getElementById('friend-search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const username = document.getElementById('friend-search-input').value.trim();
+                if (username) {
+                    this.searchFriend(username);
+                }
+            }
+        });
+        
+        // Trade tabs
+        document.getElementById('incoming-trades-tab').addEventListener('click', () => {
+            document.querySelectorAll('.trade-tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById('incoming-trades-tab').classList.add('active');
+            this.updateTradeOffersDisplay();
+        });
+        
+        document.getElementById('outgoing-trades-tab').addEventListener('click', () => {
+            document.querySelectorAll('.trade-tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById('outgoing-trades-tab').classList.add('active');
+            this.updateTradeOffersDisplay();
+        });
+        
+        // Modal event listeners
+        document.getElementById('friend-collection-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'friend-collection-modal') {
+                e.target.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('friend-collection-close').addEventListener('click', () => {
+            document.getElementById('friend-collection-modal').style.display = 'none';
+        });
+        
+        document.getElementById('trade-offer-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'trade-offer-modal') {
+                e.target.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('trade-offer-close').addEventListener('click', () => {
+            document.getElementById('trade-offer-modal').style.display = 'none';
+        });
+        
+        document.getElementById('your-collection-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'your-collection-modal') {
+                e.target.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('your-collection-close').addEventListener('click', () => {
+            document.getElementById('your-collection-modal').style.display = 'none';
+        });
+        
+        // Trade offer actions
+        document.getElementById('add-your-cards-btn').addEventListener('click', () => {
+            this.showYourCollectionForTrade();
+        });
+        
+        document.getElementById('send-trade-offer-btn').addEventListener('click', () => {
+            this.sendTradeOffer();
+        });
+        
+        document.getElementById('cancel-trade-btn').addEventListener('click', () => {
+            document.getElementById('trade-offer-modal').style.display = 'none';
+            this.currentTradeOffer = null;
+        });
+        
+        // Friend collection search
+        document.getElementById('friend-collection-search-btn').addEventListener('click', () => {
+            const searchTerm = document.getElementById('friend-collection-search').value.trim();
+            this.searchFriendCollection(searchTerm);
+        });
+        
+        document.getElementById('friend-collection-search').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const searchTerm = document.getElementById('friend-collection-search').value.trim();
+                this.searchFriendCollection(searchTerm);
+            }
+        });
+        
+        // Your collection search for trading
+        document.getElementById('your-collection-search-btn').addEventListener('click', () => {
+            const searchTerm = document.getElementById('your-collection-search').value.trim();
+            this.searchYourCollectionForTrade(searchTerm);
+        });
+        
+        document.getElementById('your-collection-search').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const searchTerm = document.getElementById('your-collection-search').value.trim();
+                this.searchYourCollectionForTrade(searchTerm);
+            }
+        });
+        
+        // Modal close event listeners
+        document.getElementById('friend-collection-close').addEventListener('click', () => {
+            this.closeModal('friend-collection-modal');
+        });
+        
+        document.getElementById('trade-offer-close').addEventListener('click', () => {
+            this.closeModal('trade-offer-modal');
+        });
+        
+        document.getElementById('your-collection-close').addEventListener('click', () => {
+            this.closeModal('your-collection-modal');
+        });
+        
+        // Trade offer modal buttons
+        document.getElementById('add-your-cards-btn').addEventListener('click', () => {
+            this.showYourCollectionForTrade();
+        });
+        
+        document.getElementById('send-trade-offer-btn').addEventListener('click', () => {
+            this.sendTradeOffer();
+        });
+        
+        document.getElementById('cancel-trade-btn').addEventListener('click', () => {
+            this.closeModal('trade-offer-modal');
+        });
+        
+        // Trade tab switching
+        document.getElementById('incoming-trades-tab').addEventListener('click', () => {
+            this.switchTradeTab('incoming');
+        });
+        
+        document.getElementById('outgoing-trades-tab').addEventListener('click', () => {
+            this.switchTradeTab('outgoing');
+        });
+        
+        // Close modals when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.style.display = 'none';
+            }
+        });
+        
+        // Trade details modal event listeners
+        document.getElementById('trade-details-close').addEventListener('click', () => {
+            this.closeModal('trade-details-modal');
+        });
+        
+        document.getElementById('close-trade-details-btn').addEventListener('click', () => {
+            this.closeModal('trade-details-modal');
+        });
+        
+        document.getElementById('trade-details-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'trade-details-modal') {
+                this.closeModal('trade-details-modal');
+            }
+        });
+
         console.log('Event listeners set up successfully');
     }
 
@@ -418,9 +848,13 @@ class MTGCollectionManager {
 
         this.currentPage = page;
         
-        // Load storage data when switching to storage page
+        // Load page-specific data
         if (page === 'storage') {
             this.displayStorage();
+        } else if (page === 'users') {
+            this.displayUsers();
+        } else if (page === 'profile') {
+            this.displayProfile();
         }
     }
 
@@ -572,6 +1006,7 @@ class MTGCollectionManager {
         document.getElementById('adv-collector-number').value = '';
         document.getElementById('adv-rarity').value = '';
         document.getElementById('adv-owned').value = '';
+        document.getElementById('adv-foil').value = '';
         document.getElementById('adv-price-min').value = '';
         document.getElementById('adv-price-max').value = '';
     }
@@ -582,6 +1017,7 @@ class MTGCollectionManager {
         const collectorNumber = document.getElementById('adv-collector-number').value.trim();
         const rarity = document.getElementById('adv-rarity').value;
         const owned = document.getElementById('adv-owned').value;
+        const foil = document.getElementById('adv-foil').value;
         const priceMin = parseFloat(document.getElementById('adv-price-min').value) || 0;
         const priceMax = parseFloat(document.getElementById('adv-price-max').value) || Infinity;
 
@@ -611,6 +1047,13 @@ class MTGCollectionManager {
                 filteredResults = searchResults.filter(card => card.owned);
             } else if (owned === 'not-owned') {
                 filteredResults = searchResults.filter(card => !card.owned);
+            }
+
+            // Filter by foil if specified
+            if (foil === 'foil') {
+                filteredResults = filteredResults.filter(card => card.foil === true);
+            } else if (foil === 'non-foil') {
+                filteredResults = filteredResults.filter(card => card.foil !== true);
             }
 
             // Filter by price range
@@ -733,13 +1176,22 @@ class MTGCollectionManager {
         document.getElementById('storage-modal').style.display = 'block';
     }
 
-    closeModal() {
-        document.getElementById('storage-modal').style.display = 'none';
-        this.pendingCard = null;
+    closeModal(modalId = 'storage-modal') {
+        document.getElementById(modalId).style.display = 'none';
+        
+        // Reset specific modal state
+        if (modalId === 'storage-modal') {
+            this.pendingCard = null;
+        } else if (modalId === 'trade-offer-modal') {
+            this.currentTradeOffer = null;
+        }
     }
 
     addCardWithStorage(storageLocation) {
         if (this.pendingCard) {
+            // Get foil status from the modal
+            const isFoil = document.getElementById('foil-toggle').checked;
+            
             // Store the price information properly
             this.addCardToCollectionSpecific(
                 `${this.pendingCard.name}|||${this.pendingCard.setCode}|||${this.pendingCard.collectorNumber}`,
@@ -747,10 +1199,12 @@ class MTGCollectionManager {
                 this.pendingCard.setCode,
                 this.pendingCard.collectorNumber,
                 this.pendingCard.imageUrl,
-                storageLocation
+                storageLocation,
+                isFoil
             );
             
             document.getElementById('quick-add-name').value = '';
+            document.getElementById('foil-toggle').checked = false; // Reset foil toggle
             this.closeModal();
         }
     }
@@ -780,6 +1234,8 @@ class MTGCollectionManager {
         const imageClass = card.owned ? 'owned' : 'not-owned';
         const ownershipClass = card.owned ? 'owned' : 'not-owned';
         const ownershipSymbol = card.owned ? '✓' : '✗';
+        const foilClass = card.foil ? 'foil-card' : '';
+        const foilText = card.foil ? 'Foil' : 'Normal';
         
         // If no image URL, try to fetch it from Scryfall
         let imageUrl = card.imageUrl;
@@ -801,12 +1257,13 @@ class MTGCollectionManager {
             <div class="card-name">${card.name}</div>
             ${card.setName ? `<div class="card-set">${card.setName} (${card.setCode}) #${card.collectorNumber}</div>` : ''}
             <div class="card-image-container">
-                <img class="card-image ${imageClass}" 
+                <img class="card-image ${imageClass} ${foilClass}" 
                      src="${imageUrl || 'https://via.placeholder.com/200x279?text=No+Image'}" 
                      alt="${card.name}"
                      onerror="this.src='https://via.placeholder.com/200x279/333/fff?text=Card+Image+Not+Found'; this.classList.add('error');"
                      onload="this.classList.remove('loading');">
                 <div class="ownership-indicator ${ownershipClass}">${ownershipSymbol}</div>
+                ${card.foil ? '<div class="foil-indicator">✨</div>' : ''}
             </div>
             <div class="card-info">
                 <div class="card-stat">
@@ -816,6 +1273,10 @@ class MTGCollectionManager {
                 <div class="card-stat">
                     <span class="stat-label">Quantity:</span>
                     <span class="stat-value">${card.quantity || 0}</span>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-label">Finish:</span>
+                    <span class="stat-value ${card.foil ? 'foil-text' : ''}">${foilText}</span>
                 </div>
                 ${card.rarity ? `<div class="card-stat">
                     <span class="stat-label">Rarity:</span>
@@ -881,26 +1342,33 @@ class MTGCollectionManager {
         document.getElementById('storage-location').value = '';
     }
 
-    addCardToCollectionSpecific(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, storageLocation = 'box_1') {
-        // Create unique identifier for this specific printing
-        const uniqueId = `${cardName}|||${setCode}|||${collectorNumber}`;
-        let card = this.collection.find(c => `${c.name}|||${c.setCode || ''}|||${c.collectorNumber || ''}` === uniqueId);
+    addCardToCollectionSpecific(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, storageLocation = 'box_1', isFoil = false) {
+        // Create unique identifier for this specific printing (including foil status)
+        const uniqueId = `${cardName}|||${setCode}|||${collectorNumber}|||${isFoil ? 'foil' : 'normal'}`;
+        let card = this.collection.find(c => `${c.name}|||${c.setCode || ''}|||${c.collectorNumber || ''}|||${c.foil ? 'foil' : 'normal'}` === uniqueId);
         
         if (card) {
             card.quantity++;
             card.owned = true;
             if (storageLocation) card.storage = storageLocation;
-            console.log(`Updated existing card: ${cardName} with price $${card.tcgPrice.toFixed(2)}`);
+            console.log(`Updated existing card: ${cardName} (${isFoil ? 'foil' : 'normal'}) with price $${card.tcgPrice.toFixed(2)}`);
         } else {
             // Get the real price from the pending card
             let tcgPrice = 0;
             if (this.pendingCard && this.pendingCard.name === cardName && this.pendingCard.setCode === setCode && this.pendingCard.collectorNumber === collectorNumber) {
                 tcgPrice = this.pendingCard.tcgPrice;
-                console.log(`Using pending card price: $${tcgPrice}`);
+                // Apply foil multiplier (foil cards are typically 2-3x more expensive)
+                if (isFoil) {
+                    tcgPrice *= 2.5;
+                }
+                console.log(`Using pending card price: $${tcgPrice} (${isFoil ? 'foil' : 'normal'})`);
             } else {
                 // Fallback: try to find the price from search results or use random for demo
                 tcgPrice = Math.random() * 50 + 1;
-                console.log(`Using fallback price: $${tcgPrice}`);
+                if (isFoil) {
+                    tcgPrice *= 2.5;
+                }
+                console.log(`Using fallback price: $${tcgPrice} (${isFoil ? 'foil' : 'normal'})`);
             }
             
             card = {
@@ -908,6 +1376,7 @@ class MTGCollectionManager {
                 setCode: setCode,
                 collectorNumber: collectorNumber,
                 tcgPrice: tcgPrice,
+                foil: isFoil,
                 owned: true,
                 quantity: 1,
                 storage: storageLocation,
@@ -915,7 +1384,7 @@ class MTGCollectionManager {
                 dateAdded: new Date().toISOString()
             };
             this.collection.push(card);
-            console.log(`Added new card: ${cardName} with price $${tcgPrice.toFixed(2)}`);
+            console.log(`Added new card: ${cardName} (${isFoil ? 'foil' : 'normal'}) with price $${tcgPrice.toFixed(2)}`);
         }
         
         this.saveCollection();
@@ -1454,6 +1923,879 @@ class MTGCollectionManager {
             }
         }, 3000);
     }
+
+    showErrorMessage(message) {
+        // Create a temporary error message
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #f44336;
+            color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        `;
+        
+        document.body.appendChild(errorDiv);
+        
+        setTimeout(() => {
+            if (errorDiv.parentNode) {
+                errorDiv.parentNode.removeChild(errorDiv);
+            }
+        }, 3000);
+    }
+
+    // Friend System and Trading Methods
+    
+    searchFriend(username) {
+        // Get all registered users from localStorage
+        const users = JSON.parse(localStorage.getItem('mtg_users') || '[]');
+       
+        const currentUser = this.userManager.getCurrentUser();
+        
+        // Filter out the current user from search results
+        const otherUsers = users.filter(user => user.id !== currentUser.id);
+        
+        // Search for users matching the username
+        const results = otherUsers.filter(user => 
+            user.username.toLowerCase().includes(username.toLowerCase()) ||
+            (user.displayName && user.displayName.toLowerCase().includes(username.toLowerCase()))
+        ).map(user => {
+            // Get user's collection data to calculate stats
+            const userCollectionKey = `mtgCollection_${user.id}`;
+            const userCollection = JSON.parse(localStorage.getItem(userCollectionKey) || '[]');
+            const ownedCards = userCollection.filter(card => card.owned);
+            const cardCount = ownedCards.reduce((sum, card) => sum + card.quantity, 0);
+            const collectionValue = ownedCards.reduce((sum, card) => sum + (card.tcgPrice * card.quantity), 0);
+            
+            // Get user's profile data
+            const profileData = this.loadUserProfile(user.id);
+            
+            return {
+                id: user.id,
+                username: user.username,
+                displayName: profileData.displayName || user.displayName || user.username,
+                cardCount: cardCount,
+                collectionValue: collectionValue,
+                profilePicture: profileData.profilePicture
+            };
+        });
+        
+        this.displayFriendSearchResults(results);
+    }
+    
+    displayFriendSearchResults(results) {
+        const resultsContainer = document.getElementById('friend-search-results');
+        resultsContainer.innerHTML = '';
+        
+        if (results.length === 0) {
+            resultsContainer.innerHTML = '<p style="color: #c7c3be; text-align: center; padding: 2rem;">No users found</p>';
+            return;
+        }
+        
+        results.forEach(user => {
+            const userCard = document.createElement('div');
+            userCard.className = 'friend-result-card';
+            
+            // Create avatar HTML with profile picture support
+            let avatarHTML;
+            if (user.profilePicture && user.profilePicture.imageUrl) {
+                avatarHTML = `
+                    <div class="friend-result-avatar profile-picture">
+                        <img src="${user.profilePicture.imageUrl}" 
+                             alt="${user.displayName}" 
+                             style="transform: scale(${user.profilePicture.scale / 100}) rotate(${user.profilePicture.rotation}deg); 
+                                    object-position: ${user.profilePicture.x}% ${user.profilePicture.y}%;"
+                             onerror="this.parentElement.innerHTML='${user.displayName.charAt(0)}';">
+                    </div>
+                `;
+            } else {
+                avatarHTML = `<div class="friend-result-avatar">${user.displayName.charAt(0)}</div>`;
+            }
+            
+            userCard.innerHTML = `
+                <div class="friend-result-info">
+                    ${avatarHTML}
+                    <div class="friend-result-details">
+                        <h4>${user.displayName}</h4>
+                        <p>@${user.username}</p>
+                        <p>${user.cardCount} cards • $${user.collectionValue.toFixed(2)}</p>
+                    </div>
+                </div>
+                <div class="friend-result-actions">
+                    <button class="friend-action-btn primary" onclick="manager.viewFriendCollection('${user.id}', '${user.displayName}')">View Collection</button>
+                    <button class="friend-action-btn" onclick="manager.addFriend('${user.id}', '${user.displayName}', '${user.username}')">Add Friend</button>
+                </div>
+            `;
+            resultsContainer.appendChild(userCard);
+        });
+    }
+    
+    viewFriendCollection(friendId, friendName) {
+        // Get the friend's actual collection from localStorage
+        const friendCollectionKey = `mtgCollection_${friendId}`;
+        const friendCollection = JSON.parse(localStorage.getItem(friendCollectionKey) || '[]');
+        
+        // Filter to only show owned cards
+        const ownedCards = friendCollection.filter(card => card.owned);
+        
+        this.currentFriendCollection = ownedCards;
+        this.currentFriendId = friendId;
+        this.currentFriendName = friendName;
+        
+        document.getElementById('friend-collection-title').textContent = `${friendName}'s Collection`;
+        document.getElementById('friend-collection-count').textContent = `${ownedCards.length} cards`;
+        
+        const totalValue = ownedCards.reduce((sum, card) => sum + (card.tcgPrice * card.quantity || 0), 0);
+        document.getElementById('friend-collection-value').textContent = `$${totalValue.toFixed(2)} total value`;
+        
+        this.displayFriendCollection(ownedCards);
+        document.getElementById('friend-collection-modal').style.display = 'block';
+    }
+    
+    generateMockFriendCollection() {
+        const mockCards = [
+            { name: 'Lightning Bolt', setCode: 'M21', collectorNumber: '162', tcgPrice: 0.50, foil: false, imageUrl: '' },
+            { name: 'Black Lotus', setCode: 'LEA', collectorNumber: '232', tcgPrice: 15000.00, foil: false, imageUrl: '' },
+            { name: 'Mox Ruby', setCode: 'LEA', collectorNumber: '265', tcgPrice: 8000.00, foil: false, imageUrl: '' },
+            { name: 'Tarmogoyf', setCode: 'MM3', collectorNumber: '141', tcgPrice: 45.00, foil: true, imageUrl: '' },
+            { name: 'Snapcaster Mage', setCode: 'MM3', collectorNumber: '55', tcgPrice: 35.00, foil: false, imageUrl: '' },
+            { name: 'Jace, the Mind Sculptor', setCode: 'EMA', collectorNumber: '57', tcgPrice: 80.00, foil: true, imageUrl: '' },
+            { name: 'Force of Will', setCode: 'EMA', collectorNumber: '49', tcgPrice: 90.00, foil: false, imageUrl: '' },
+            { name: 'Liliana of the Veil', setCode: 'MM3', collectorNumber: '76', tcgPrice: 60.00, foil: false, imageUrl: '' }
+        ];
+        
+        return mockCards.map(card => ({
+            ...card,
+            owned: true,
+            quantity: 1,
+            storage: 'main_deck',
+            setName: this.getSetName(card.setCode),
+            rarity: 'mythic'
+        }));
+    }
+    
+    getSetName(setCode) {
+        const setNames = {
+            'M21': 'Core Set 2021',
+            'LEA': 'Limited Edition Alpha',
+            'MM3': 'Modern Masters 2017',
+            'EMA': 'Eternal Masters'
+        };
+        return setNames[setCode] || 'Unknown Set';
+    }
+    
+    async displayFriendCollection(cards) {
+        const grid = document.getElementById('friend-collection-grid');
+        grid.innerHTML = '';
+        
+        for (const card of cards) {
+            const cardElement = await this.createFriendCardElement(card);
+            grid.appendChild(cardElement);
+        }
+    }
+    
+    async createFriendCardElement(card) {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'card-item';
+        
+        const foilClass = card.foil ? 'foil-card' : '';
+        const foilText = card.foil ? 'Foil' : 'Normal';
+        
+        // Try to fetch image from Scryfall
+        let imageUrl = card.imageUrl;
+        if (!imageUrl && card.name) {
+            try {
+                const response = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}`);
+                const data = await response.json();
+                imageUrl = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
+                card.imageUrl = imageUrl;
+            } catch (error) {
+                console.error('Error fetching card image:', error);
+            }
+        }
+        
+        const cardIdentifier = `${card.name}|||${card.setCode || ''}|||${card.collectorNumber || ''}`;
+        
+        cardDiv.innerHTML = `
+            <div class="card-name">${card.name}</div>
+            ${card.setName ? `<div class="card-set">${card.setName} (${card.setCode}) #${card.collectorNumber}</div>` : ''}
+            <div class="card-image-container">
+                <img class="card-image owned ${foilClass}" 
+                     src="${imageUrl || 'https://via.placeholder.com/200x279?text=No+Image'}" 
+                     alt="${card.name}"
+                     onerror="this.src='https://via.placeholder.com/200x279/333/fff?text=Card+Image+Not+Found'; this.classList.add('error');"
+                     onload="this.classList.remove('loading');">
+                <div class="ownership-indicator owned">✓</div>
+                ${card.foil ? '<div class="foil-indicator">✨</div>' : ''}
+            </div>
+            <div class="card-info">
+                <div class="card-stat">
+                    <span class="stat-label">TCG Price:</span>
+                    <span class="stat-value price">$${card.tcgPrice?.toFixed(2) || 'N/A'}</span>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-label">Quantity:</span>
+                    <span class="stat-value">${card.quantity || 1}</span>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-label">Finish:</span>
+                    <span class="stat-value ${card.foil ? 'foil-text' : ''}">${foilText}</span>
+                </div>
+                ${card.rarity ? `<div class="card-stat">
+                    <span class="stat-label">Rarity:</span>
+                    <span class="stat-value">${card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1)}</span>
+                </div>` : ''}
+            </div>
+            <div class="card-actions">
+                <button class="trade-offer-card-btn" onclick="manager.addCardToTradeWant('${cardIdentifier}', '${card.name}', '${card.setCode || ''}', '${card.collectorNumber || ''}', '${card.imageUrl || ''}', ${card.tcgPrice || 0}, ${card.foil || false})">Want for Trade</button>
+            </div>
+        `;
+        
+        return cardDiv;
+    }
+    
+    addCardToTradeWant(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, tcgPrice, foil) {
+        if (!this.currentTradeOffer) {
+            this.currentTradeOffer = {
+                friendId: this.currentFriendId,
+                friendName: this.currentFriendName,
+                wantCards: [],
+                offerCards: []
+            };
+        }
+        
+        // Check if card is already in want list
+        const existingIndex = this.currentTradeOffer.wantCards.findIndex(card => card.identifier === cardIdentifier);
+        if (existingIndex !== -1) {
+            this.showSuccessMessage('Card already in trade want list');
+            return;
+        }
+        
+        const tradeCard = {
+            identifier: cardIdentifier,
+            name: cardName,
+            setCode: setCode,
+            collectorNumber: collectorNumber,
+            imageUrl: imageUrl,
+            tcgPrice: tcgPrice,
+            foil: foil
+        };
+        
+        this.currentTradeOffer.wantCards.push(tradeCard);
+        this.showSuccessMessage(`Added ${cardName} to trade want list`);
+        
+        // Open trade offer modal
+        document.getElementById('friend-collection-modal').style.display = 'none';
+        this.showTradeOfferModal();
+    }
+    
+    showTradeOfferModal() {
+        document.getElementById('trade-offer-title').textContent = `Trade with ${this.currentTradeOffer.friendName}`;
+        this.updateTradeOfferDisplay();
+        document.getElementById('trade-offer-modal').style.display = 'block';
+    }
+    
+    updateTradeOfferDisplay() {
+        const yourCardsContainer = document.getElementById('your-trade-cards');
+        const wantedCardsContainer = document.getElementById('wanted-trade-cards');
+        
+        // Display your offer cards
+        yourCardsContainer.innerHTML = '';
+        if (this.currentTradeOffer.offerCards.length === 0) {
+            yourCardsContainer.innerHTML = '<div class="trade-empty-state">No cards selected</div>';
+        } else {
+            this.currentTradeOffer.offerCards.forEach((card, index) => {
+                const cardElement = this.createTradeCardElement(card, index, 'offer');
+                yourCardsContainer.appendChild(cardElement);
+            });
+        }
+        
+        // Display wanted cards
+        wantedCardsContainer.innerHTML = '';
+        if (this.currentTradeOffer.wantCards.length === 0) {
+            wantedCardsContainer.innerHTML = '<div class="trade-empty-state">No cards selected</div>';
+        } else {
+            this.currentTradeOffer.wantCards.forEach((card, index) => {
+                const cardElement = this.createTradeCardElement(card, index, 'want');
+                wantedCardsContainer.appendChild(cardElement);
+            });
+        }
+    }
+    
+    createTradeCardElement(card, index, type) {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'trade-card-item';
+        
+        cardDiv.innerHTML = `
+            <div class="trade-card-info">
+                <img class="trade-card-image" src="${card.imageUrl || 'https://via.placeholder.com/30x42?text=?'}" alt="${card.name}">
+                <div class="trade-card-details">
+                    <div class="trade-card-name">${card.name} ${card.foil ? '(Foil)' : ''}</div>
+                    <div class="trade-card-set">${card.setCode} #${card.collectorNumber}</div>
+                </div>
+            </div>
+            <button class="trade-card-remove" onclick="manager.removeCardFromTrade(${index}, '${type}')">Remove</button>
+        `;
+        
+        return cardDiv;
+    }
+    
+    removeCardFromTrade(index, type) {
+        if (type === 'offer') {
+            this.currentTradeOffer.offerCards.splice(index, 1);
+        } else {
+            this.currentTradeOffer.wantCards.splice(index, 1);
+        }
+        this.updateTradeOfferDisplay();
+    }
+    
+    showYourCollectionForTrade() {
+        this.displayYourCollectionForTrade();
+        document.getElementById('your-collection-modal').style.display = 'block';
+    }
+    
+    async displayYourCollectionForTrade() {
+        const grid = document.getElementById('your-collection-grid');
+        grid.innerHTML = '';
+        
+        const ownedCards = this.collection.filter(card => card.owned);
+        
+        for (const card of ownedCards) {
+            const cardElement = await this.createYourTradeCardElement(card);
+            grid.appendChild(cardElement);
+        }
+    }
+    
+    async createYourTradeCardElement(card) {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'card-item';
+        
+        const foilClass = card.foil ? 'foil-card' : '';
+        const foilText = card.foil ? 'Foil' : 'Normal';
+        
+        let imageUrl = card.imageUrl;
+        if (!imageUrl && card.name) {
+            try {
+                const response = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}`);
+                const data = await response.json();
+                imageUrl = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
+                card.imageUrl = imageUrl;
+            } catch (error) {
+                console.error('Error fetching card image:', error);
+            }
+        }
+        
+        const cardIdentifier = `${card.name}|||${card.setCode || ''}|||${card.collectorNumber || ''}`;
+        
+        cardDiv.innerHTML = `
+            <div class="card-name">${card.name}</div>
+            ${card.setName ? `<div class="card-set">${card.setName} (${card.setCode}) #${card.collectorNumber}</div>` : ''}
+            <div class="card-image-container">
+                <img class="card-image owned ${foilClass}" 
+                     src="${imageUrl || 'https://via.placeholder.com/200x279?text=No+Image'}" 
+                     alt="${card.name}"
+                     onerror="this.src='https://via.placeholder.com/200x279/333/fff?text=Card+Image+Not+Found'; this.classList.add('error');"
+                     onload="this.classList.remove('loading');">
+                <div class="ownership-indicator owned">✓</div>
+                ${card.foil ? '<div class="foil-indicator">✨</div>' : ''}
+            </div>
+            <div class="card-info">
+                <div class="card-stat">
+                    <span class="stat-label">TCG Price:</span>
+                    <span class="stat-value price">$${card.tcgPrice?.toFixed(2) || 'N/A'}</span>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-label">Quantity:</span>
+                    <span class="stat-value">${card.quantity || 1}</span>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-label">Finish:</span>
+                    <span class="stat-value ${card.foil ? 'foil-text' : ''}">${foilText}</span>
+                </div>
+            </div>
+            <div class="card-actions">
+                <button class="trade-offer-card-btn" onclick="manager.addCardToTradeOffer('${cardIdentifier}', '${card.name}', '${card.setCode || ''}', '${card.collectorNumber || ''}', '${card.imageUrl || ''}', ${card.tcgPrice || 0}, ${card.foil || false})">Add to Trade</button>
+            </div>
+        `;
+        
+        return cardDiv;
+    }
+    
+    addCardToTradeOffer(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, tcgPrice, foil) {
+        if (!this.currentTradeOffer) {
+            this.currentTradeOffer = {
+                friendId: this.currentFriendId,
+                friendName: this.currentFriendName,
+                wantCards: [],
+                offerCards: []
+            };
+        }
+        
+        // Check if card is already in offer list
+        const existingIndex = this.currentTradeOffer.offerCards.findIndex(card => card.identifier === cardIdentifier);
+        if (existingIndex !== -1) {
+            this.showSuccessMessage('Card already in trade offer');
+            return;
+        }
+        
+        const tradeCard = {
+            identifier: cardIdentifier,
+            name: cardName,
+            setCode: setCode,
+            collectorNumber: collectorNumber,
+            imageUrl: imageUrl,
+            tcgPrice: tcgPrice,
+            foil: foil
+        };
+        
+        this.currentTradeOffer.offerCards.push(tradeCard);
+        this.showSuccessMessage(`Added ${cardName} to trade offer`);
+        
+        // Close your collection modal and update trade display
+        document.getElementById('your-collection-modal').style.display = 'none';
+        this.updateTradeOfferDisplay();
+    }
+    
+    sendTradeOffer() {
+        if (!this.currentTradeOffer || 
+            this.currentTradeOffer.offerCards.length === 0 || 
+            this.currentTradeOffer.wantCards.length === 0) {
+            alert('Please select cards to offer and cards you want before sending the trade.');
+            return;
+        }
+        
+        // In a real app, this would send the trade offer to the server
+        // For now, we'll just simulate it
+        const tradeOffer = {
+            id: Date.now().toString(),
+            fromUserId: this.userManager.getCurrentUser().id,
+            fromUserName: this.userManager.getCurrentUser().username,
+            toUserId: this.currentTradeOffer.friendId,
+            toUserName: this.currentTradeOffer.friendName,
+            offerCards: this.currentTradeOffer.offerCards,
+            wantCards: this.currentTradeOffer.wantCards,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        };
+        
+        // Store in localStorage (in a real app, this would be in a database)
+        let tradeOffers = JSON.parse(localStorage.getItem('tradeOffers') || '[]');
+        tradeOffers.push(tradeOffer);
+        localStorage.setItem('tradeOffers', JSON.stringify(tradeOffers));
+        
+        this.showSuccessMessage(`Trade offer sent to ${this.currentTradeOffer.friendName}!`);
+        
+        // Close modal and reset trade
+        document.getElementById('trade-offer-modal').style.display = 'none';
+        this.currentTradeOffer = null;
+        this.updateTradeOffersDisplay();
+    }
+    
+    updateTradeOffersDisplay() {
+        const currentUser = this.userManager.getCurrentUser();
+        const tradeOffers = JSON.parse(localStorage.getItem('tradeOffers') || '[]');
+        
+        const incomingTrades = tradeOffers.filter(trade => 
+            trade.toUserId === currentUser.id && trade.status === 'pending'
+        );
+        
+        const outgoingTrades = tradeOffers.filter(trade => 
+            trade.fromUserId === currentUser.id && trade.status === 'pending'
+        );
+        
+        document.getElementById('incoming-count').textContent = incomingTrades.length;
+        document.getElementById('outgoing-count').textContent = outgoingTrades.length;
+        document.getElementById('user-active-trades').textContent = incomingTrades.length + outgoingTrades.length;
+        
+        // Display trades based on active tab
+        const activeTab = document.querySelector('.trade-tab.active');
+        if (activeTab && activeTab.id === 'incoming-trades-tab') {
+            this.displayTradeOffers(incomingTrades, 'incoming');
+        } else {
+            this.displayTradeOffers(outgoingTrades, 'outgoing');
+        }
+    }
+    
+    displayTradeOffers(trades, type) {
+        const container = document.getElementById('trade-offers-container');
+        container.innerHTML = '';
+        
+        if (trades.length === 0) {
+            container.innerHTML = `<div class="trade-empty-state">No ${type} trade offers</div>`;
+            return;
+        }
+        
+        trades.forEach(trade => {
+            const tradeElement = document.createElement('div');
+            tradeElement.className = 'trade-offer-card';
+            
+            const otherUser = type === 'incoming' ? trade.fromUserName : trade.toUserName;
+            const avatarLetter = otherUser.charAt(0).toUpperCase();
+            
+            tradeElement.innerHTML = `
+                <div class="trade-offer-info">
+                    <div class="trade-offer-avatar">${avatarLetter}</div>
+                    <div class="trade-offer-details">
+                        <h4>${type === 'incoming' ? 'Trade from' : 'Trade to'} ${otherUser}</h4>
+                        <p>${trade.offerCards.length} cards offered for ${trade.wantCards.length} cards</p>
+                        <p>Created: ${new Date(trade.createdAt).toLocaleDateString()}</p>
+                    </div>
+                </div>
+                <div class="trade-offer-actions">
+                    <button class="trade-offer-btn" onclick="manager.viewTradeOffer('${trade.id}')">View Details</button>
+                    ${type === 'incoming' ? `
+                        <button class="trade-offer-btn accept" onclick="manager.acceptTradeOffer('${trade.id}')">Accept</button>
+                        <button class="trade-offer-btn decline" onclick="manager.declineTradeOffer('${trade.id}')">Decline</button>
+                    ` : `
+                        <button class="trade-offer-btn decline" onclick="manager.cancelTradeOffer('${trade.id}')">Cancel</button>
+                    `}
+                </div>
+            `;
+            
+            container.appendChild(tradeElement);
+        });
+    }
+    
+    addFriend(friendId, friendName, friendUsername) {
+        const currentUser = this.userManager.getCurrentUser();
+        let friends = JSON.parse(localStorage.getItem(`friends_${currentUser.id}`) || '[]');
+        
+        // Check if already friends
+        if (friends.some(friend => friend.id === friendId)) {
+            this.showSuccessMessage('Already friends with this user');
+            return;
+        }
+        
+        friends.push({
+            id: friendId,
+            name: friendName,
+            username: friendUsername,
+            addedAt: new Date().toISOString()
+        });
+        
+        localStorage.setItem(`friends_${currentUser.id}`, JSON.stringify(friends));
+        this.showSuccessMessage(`Added ${friendName} as a friend!`);
+        this.displayFriends();
+    }
+    
+    displayFriends() {
+        const currentUser = this.userManager.getCurrentUser();
+        const friends = JSON.parse(localStorage.getItem(`friends_${currentUser.id}`) || '[]');
+        const friendsList = document.getElementById('friends-list');
+        
+        friendsList.innerHTML = '';
+        
+        if (friends.length === 0) {
+            friendsList.innerHTML = '<div class="trade-empty-state">No friends added yet</div>';
+            return;
+        }
+        
+        friends.forEach(friend => {
+            const friendCard = document.createElement('div');
+            friendCard.className = 'friend-card';
+            
+            // Get friend's profile data
+            const friendProfileData = this.loadUserProfile(friend.id);
+            
+            // Create avatar HTML with profile picture support
+            let avatarHTML;
+            if (friendProfileData.profilePicture && friendProfileData.profilePicture.imageUrl) {
+                avatarHTML = `
+                    <div class="friend-card-avatar profile-picture">
+                        <img src="${friendProfileData.profilePicture.imageUrl}" 
+                             alt="${friend.name}" 
+                             style="transform: scale(${friendProfileData.profilePicture.scale / 100}) rotate(${friendProfileData.profilePicture.rotation}deg); 
+                                    object-position: ${friendProfileData.profilePicture.x}% ${friendProfileData.profilePicture.y}%;"
+                             onerror="this.parentElement.innerHTML='${friend.name.charAt(0)}';">
+                    </div>
+                `;
+            } else {
+                avatarHTML = `<div class="friend-card-avatar">${friend.name.charAt(0)}</div>`;
+            }
+            
+            friendCard.innerHTML = `
+                <div class="friend-card-info">
+                    ${avatarHTML}
+                    <div class="friend-card-details">
+                        <h4>${friendProfileData.displayName || friend.name}</h4>
+                        <p>@${friend.username}</p>
+                    </div>
+                </div>
+                <div class="friend-card-actions">
+                    <button class="friend-card-btn" onclick="manager.viewFriendCollection('${friend.id}', '${friend.name}')">View Collection</button>
+                    <button class="friend-card-btn" onclick="manager.removeFriend('${friend.id}')">Remove</button>
+                </div>
+            `;
+            
+            friendsList.appendChild(friendCard);
+        });
+    }
+    
+    removeFriend(friendId) {
+        const currentUser = this.userManager.getCurrentUser();
+        let friends = JSON.parse(localStorage.getItem(`friends_${currentUser.id}`) || '[]');
+        
+        friends = friends.filter(friend => friend.id !== friendId);
+        localStorage.setItem(`friends_${currentUser.id}`, JSON.stringify(friends));
+        
+        this.showSuccessMessage('Friend removed');
+        this.displayFriends();
+    }
+    
+    // Profile Page Methods
+    displayProfile() {
+        const currentUser = this.userManager.getCurrentUser();
+        if (!currentUser) return;
+
+        // Load user profile data
+        const profileData = this.loadUserProfile(currentUser.id);
+        
+        // Update current profile display
+        document.getElementById('profile-username').textContent = profileData.displayName || currentUser.username;
+        document.getElementById('profile-status').textContent = profileData.statusMessage || 'No status message';
+        
+        // Update profile avatar
+        const profileImage = document.getElementById('current-profile-image');
+        const profileInitial = document.getElementById('current-profile-initial');
+        
+        if (profileData.profilePicture) {
+            profileImage.src = profileData.profilePicture.imageUrl;
+            profileImage.style.display = 'block';
+            profileImage.style.transform = `scale(${profileData.profilePicture.scale / 100}) rotate(${profileData.profilePicture.rotation}deg)`;
+            profileImage.style.objectPosition = `${profileData.profilePicture.x}% ${profileData.profilePicture.y}%`;
+            profileInitial.style.display = 'none';
+        } else {
+            profileImage.style.display = 'none';
+            profileInitial.style.display = 'block';
+            profileInitial.textContent = currentUser.username.charAt(0).toUpperCase();
+        }
+        
+        // Update profile settings form
+        document.getElementById('profile-display-name').value = profileData.displayName || '';
+        document.getElementById('profile-status-message').value = profileData.statusMessage || '';
+        document.getElementById('profile-visibility').value = profileData.visibility || 'public';
+        
+        // Setup profile event listeners
+        this.setupProfileEventListeners();
+    }
+    
+    setupProfileEventListeners() {
+        // Profile card search
+        document.getElementById('profile-search-btn').addEventListener('click', () => {
+            this.searchProfileCards();
+        });
+        
+        document.getElementById('profile-card-search').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.searchProfileCards();
+            }
+        });
+        
+        // Profile customization controls
+        document.getElementById('artwork-scale').addEventListener('input', (e) => {
+            this.updateArtworkPreview();
+            document.getElementById('scale-value').textContent = e.target.value + '%';
+        });
+        
+        document.getElementById('artwork-rotation').addEventListener('input', (e) => {
+            this.updateArtworkPreview();
+            document.getElementById('rotation-value').textContent = e.target.value + '°';
+        });
+        
+        document.getElementById('artwork-x').addEventListener('input', (e) => {
+            this.updateArtworkPreview();
+            document.getElementById('x-value').textContent = e.target.value + '%';
+        });
+        
+        document.getElementById('artwork-y').addEventListener('input', (e) => {
+            this.updateArtworkPreview();
+            document.getElementById('y-value').textContent = e.target.value + '%';
+        });
+        
+        // Profile action buttons
+        document.getElementById('reset-artwork-btn').addEventListener('click', () => {
+            this.resetArtworkCustomization();
+        });
+        
+        document.getElementById('save-profile-btn').addEventListener('click', () => {
+            this.saveProfilePicture();
+        });
+        
+        document.getElementById('cancel-profile-btn').addEventListener('click', () => {
+            this.cancelProfileCustomization();
+        });
+        
+        document.getElementById('save-profile-settings-btn').addEventListener('click', () => {
+            this.saveProfileSettings();
+        });
+    }
+    
+    async searchProfileCards() {
+        const searchTerm = document.getElementById('profile-card-search').value.trim();
+        if (!searchTerm) return;
+        
+        const resultsContainer = document.getElementById('profile-card-results');
+        resultsContainer.innerHTML = '<div class="loading">Searching for cards...</div>';
+        
+        try {
+            // Use the same card search as the main collection
+            const searchResults = await this.simulateCardSearch(searchTerm);
+            
+            resultsContainer.innerHTML = '';
+            
+            if (searchResults.length === 0) {
+                resultsContainer.innerHTML = '<p style="text-align: center; color: #c7c3be;">No cards found</p>';
+                return;
+            }
+            
+            searchResults.forEach(card => {
+                const cardOption = document.createElement('div');
+                cardOption.className = 'profile-card-option';
+                cardOption.innerHTML = `
+                    <img src="${card.imageUrl}" alt="${card.name}" onerror="this.src='/placeholder-card.png';">
+                    <h4>${card.name}</h4>
+                    <p>${card.setCode} • ${card.rarity}</p>
+                `;
+                cardOption.addEventListener('click', () => this.selectProfileCard(card));
+                resultsContainer.appendChild(cardOption);
+            });
+        } catch (error) {
+            resultsContainer.innerHTML = '<p style="text-align: center; color: #dc3545;">Error searching for cards</p>';
+        }
+    }
+    
+    selectProfileCard(card) {
+        this.selectedProfileCard = card;
+        
+        // Show customization section
+        document.querySelector('.profile-customization-section').style.display = 'block';
+        
+        // Update selected artwork
+        const artworkImg = document.getElementById('selected-artwork');
+        artworkImg.src = card.imageUrl;
+        
+        // Reset customization controls
+        this.resetArtworkCustomization();
+        
+        // Scroll to customization section
+        document.querySelector('.profile-customization-section').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    updateArtworkPreview() {
+        const artworkImg = document.getElementById('selected-artwork');
+        const scale = document.getElementById('artwork-scale').value;
+        const rotation = document.getElementById('artwork-rotation').value;
+        const x = document.getElementById('artwork-x').value;
+        const y = document.getElementById('artwork-y').value;
+        
+        artworkImg.style.transform = `scale(${scale / 100}) rotate(${rotation}deg)`;
+        artworkImg.style.objectPosition = `${x}% ${y}%`;
+    }
+    
+    resetArtworkCustomization() {
+        document.getElementById('artwork-scale').value = 100;
+        document.getElementById('artwork-rotation').value = 0;
+        document.getElementById('artwork-x').value = 0;
+        document.getElementById('artwork-y').value = 0;
+        
+        document.getElementById('scale-value').textContent = '100%';
+        document.getElementById('rotation-value').textContent = '0°';
+        document.getElementById('x-value').textContent = '0%';
+        document.getElementById('y-value').textContent = '0%';
+        
+        this.updateArtworkPreview();
+    }
+    
+    saveProfilePicture() {
+        if (!this.selectedProfileCard) return;
+        
+        const currentUser = this.userManager.getCurrentUser();
+        const profileData = this.loadUserProfile(currentUser.id);
+        
+        const profilePicture = {
+            cardId: this.selectedProfileCard.id,
+            imageUrl: this.selectedProfileCard.imageUrl,
+            cardName: this.selectedProfileCard.name,
+            scale: parseInt(document.getElementById('artwork-scale').value),
+            rotation: parseInt(document.getElementById('artwork-rotation').value),
+            x: parseInt(document.getElementById('artwork-x').value),
+            y: parseInt(document.getElementById('artwork-y').value)
+        };
+        
+        profileData.profilePicture = profilePicture;
+        this.saveUserProfile(currentUser.id, profileData);
+        
+        // Update current profile display
+        this.displayProfile();
+        
+        // Update header avatar
+        this.updateHeaderAvatar();
+        
+        // Hide customization section
+        document.querySelector('.profile-customization-section').style.display = 'none';
+        
+        this.showSuccessMessage('Profile picture updated successfully!');
+    }
+    
+    cancelProfileCustomization() {
+        document.querySelector('.profile-customization-section').style.display = 'none';
+        this.selectedProfileCard = null;
+    }
+    
+    saveProfileSettings() {
+        const currentUser = this.userManager.getCurrentUser();
+        const profileData = this.loadUserProfile(currentUser.id);
+        
+        profileData.displayName = document.getElementById('profile-display-name').value.trim();
+        profileData.statusMessage = document.getElementById('profile-status-message').value.trim();
+        profileData.visibility = document.getElementById('profile-visibility').value;
+        
+        this.saveUserProfile(currentUser.id, profileData);
+        
+        // Update displays
+        this.displayProfile();
+        this.displayUsers(); // Update user info on Users tab
+        
+        this.showSuccessMessage('Profile settings saved successfully!');
+    }
+    
+    loadUserProfile(userId) {
+        const key = `profile_${userId}`;
+        const profileData = localStorage.getItem(key);
+        return profileData ? JSON.parse(profileData) : {
+            displayName: '',
+            statusMessage: '',
+            visibility: 'public',
+            profilePicture: null
+        };
+    }
+    
+    saveUserProfile(userId, profileData) {
+        const key = `profile_${userId}`;
+        localStorage.setItem(key, JSON.stringify(profileData));
+    }
+    
+    updateHeaderAvatar() {
+        const currentUser = this.userManager.getCurrentUser();
+        if (!currentUser) return;
+        
+        const profileData = this.loadUserProfile(currentUser.id);
+        const headerAvatar = document.getElementById('current-user-avatar');
+        
+        if (profileData.profilePicture && headerAvatar) {
+            // If there's a profile picture, we might want to show it in the header too
+            // For now, we'll just update the initial
+            headerAvatar.textContent = (profileData.displayName || currentUser.username).charAt(0).toUpperCase();
+        }
+    }
+    
+    // ...existing code...
 }
 
 // Initialize the app when DOM is loaded
@@ -1461,15 +2803,54 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing manager...');
     
     try {
+        console.log('Creating UserSessionManager...');
+        const userManager = new UserSessionManager();
+        console.log('UserSessionManager created successfully');
+        
+        console.log('Creating MTGCollectionManager...');
         window.manager = new MTGCollectionManager();
+        console.log('MTGCollectionManager created successfully');
+        
         window.mtgCollection = window.manager; // Create alias for button onclick handlers
         
-        console.log('Manager created, calling init...');
+        console.log('Manager created successfully:', window.manager);
+        console.log('Calling init...');
+        
         // Initialize the manager (this sets up event listeners)
         window.manager.init();
         console.log('Manager initialized successfully');
+        
+        // Test basic functionality
+        console.log('Testing basic methods...');
+        console.log('Current user:', window.manager.userManager.getCurrentUser());
+        console.log('Is guest:', window.manager.userManager.isGuest());
+        
     } catch (error) {
         console.error('Error initializing manager:', error);
+        console.error('Error stack:', error.stack);
+        
+        // Fallback: try to add basic event listeners
+        console.log('Attempting fallback event listeners...');
+        const collectionTab = document.getElementById('collection-tab');
+        if (collectionTab) {
+            collectionTab.addEventListener('click', () => {
+                console.log('Fallback: Collection tab clicked');
+                // Removed alert for cleaner UX
+            });
+        } else {
+            console.error('Collection tab not found!');
+        }
+        
+        const searchBtn = document.getElementById('search-btn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                console.log('Fallback: Search button clicked');
+                alert('Search button clicked (fallback)');
+                // Removed alert for cleaner UX
+            });
+        } else {
+            console.error('Search button not found!');
+        }
     }
 });
 
@@ -1479,27 +2860,59 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(async () => {
         if (manager.collection.length === 0) {
             const sampleCards = [
-                { name: 'Lightning Bolt', tcgPrice: 2.50, owned: true, quantity: 4, storage: 'red_binder', imageUrl: null },
-                { name: 'Black Lotus', tcgPrice: 45000.00, owned: false, quantity: 0, storage: null, imageUrl: null },
-                { name: 'Counterspell', tcgPrice: 1.25, owned: true, quantity: 3, storage: 'blue_binder', imageUrl: null },
-                { name: 'Giant Growth', tcgPrice: 0.75, owned: true, quantity: 2, storage: 'big_white_container', imageUrl: null },
-                { name: 'Sol Ring', tcgPrice: 8.99, owned: true, quantity: 1, storage: 'jbm_deck', imageUrl: null }
+                { name: 'Lightning Bolt', owned: true, quantity: 4, storage: 'main_deck', tcgPrice: 0.50 },
+                { name: 'Counterspell', owned: true, quantity: 2, storage: 'trade_binder', tcgPrice: 0.25 },
+                { name: 'Black Lotus', owned: false, quantity: 0, storage: null, tcgPrice: 15000.00 },
+                { name: 'Tarmogoyf', owned: true, quantity: 1, storage: 'deck_box', tcgPrice: 45.00, foil: true },
+                { name: 'Snapcaster Mage', owned: true, quantity: 3, storage: 'main_deck', tcgPrice: 35.00 }
             ];
             
-            // Fetch images for sample cards
             for (const card of sampleCards) {
-                try {
-                    const response = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}`);
-                    const data = await response.json();
-                    card.imageUrl = data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal;
-                } catch (error) {
-                    console.error(`Error fetching image for ${card.name}:`, error);
+                const existingIndex = manager.collection.findIndex(c => c.name === card.name);
+                if (existingIndex === -1) {
+                    manager.collection.push(card);
                 }
             }
             
-            sampleCards.forEach(card => manager.collection.push(card));
             manager.saveCollection();
             manager.displayCollection();
         }
     }, 100);
+});
+
+// Test basic button functionality
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Testing button functionality...');
+    
+    setTimeout(() => {
+        const collectionTab = document.getElementById('collection-tab');
+        if (collectionTab) {
+            console.log('Collection tab found:', collectionTab);
+            collectionTab.style.border = '2px solid red'; // Visual indicator
+            
+            // Test manual click
+            collectionTab.addEventListener('click', (e) => {
+                console.log('Manual click detected on collection tab');
+                e.preventDefault();
+                // Removed alert for cleaner UX
+            });
+        } else {
+            console.error('Collection tab not found!');
+        }
+        
+        const searchBtn = document.getElementById('search-btn');
+        if (searchBtn) {
+            console.log('Search button found:', searchBtn);
+            searchBtn.style.border = '2px solid blue'; // Visual indicator
+            
+            searchBtn.addEventListener('click', (e) => {
+                console.log('Manual click detected on search button');
+                e.preventDefault();
+                // Removed alert for cleaner UX
+            });
+        } else {
+            console.error('Search button not found!');
+        }
+        
+    }, 500);
 });

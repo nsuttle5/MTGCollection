@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Collection Manager - Simplified</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>MTG Collection Manager</h1>
+        <nav>
+            <button id="collection-tab" class="tab-button active">Collection</button>
+            <button id="storage-tab" class="tab-button">Storage</button>
+            <button id="decks-tab" class="tab-button">Decks</button>
+            <button id="users-tab" class="tab-button">Users</button>
+        </nav>
+    </header>
+
+    <main>
+        <div id="collection-page" class="page active">
+            <div class="controls">
+                <div class="search-container">
+                    <input type="text" id="card-search" placeholder="Search for cards...">
+                    <button id="search-btn">Search</button>
+                    <button id="clear-search-btn">Clear</button>
+                </div>
+            </div>
+            <div id="collection-grid" class="card-grid"></div>
+        </div>
+    </main>
+
+    <script src="script-simple.js"></script>
+</body>
+</html>

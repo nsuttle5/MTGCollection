@@ -13,6 +13,8 @@
             <button id="collection-tab" class="tab-button active">Collection</button>
             <button id="storage-tab" class="tab-button">Storage</button>
             <button id="decks-tab" class="tab-button">Decks</button>
+            <button id="users-tab" class="tab-button">Users</button>
+            <button id="profile-tab" class="tab-button">Profile</button>
         </nav>
     </header>
 
@@ -82,6 +84,14 @@
                                 <option value="">All Cards</option>
                                 <option value="owned">Cards I Own</option>
                                 <option value="not-owned">Cards I Don't Own</option>
+                            </select>
+                        </div>
+                        <div class="search-field">
+                            <label for="adv-foil">Foil:</label>
+                            <select id="adv-foil">
+                                <option value="">All Cards</option>
+                                <option value="foil">Foil Only</option>
+                                <option value="non-foil">Non-Foil Only</option>
                             </select>
                         </div>
                         <div class="search-field">
@@ -221,6 +231,249 @@
                 </div>
             </div>
         </div>
+
+        <!-- Users Page -->
+        <div id="users-page" class="page">
+            <div class="users-header">
+                <h2>Friends & Trading</h2>
+                <p>Search for friends, view their collections, and manage trade offers</p>
+            </div>
+            
+            <div class="users-content">
+                <!-- Friend Search Section -->
+                <div class="friend-search-section">
+                    <h3>Find Friends</h3>
+                    <div class="search-friend-container">
+                        <input type="text" id="friend-search-input" placeholder="Search for a friend by username...">
+                        <button id="search-friend-btn">Search</button>
+                    </div>
+                    <div id="friend-search-results" class="friend-search-results"></div>
+                </div>
+                
+                <!-- Current User Info -->
+                <div class="current-user-info">
+                    <div class="user-card">
+                        <div class="user-avatar">
+                            <span id="current-user-avatar">U</span>
+                        </div>
+                        <div class="user-details">
+                            <h3 id="current-user-name">Current User</h3>
+                            <p id="current-user-status">Guest Mode</p>
+                            <div class="user-stats">
+                                <div class="stat">
+                                    <span class="stat-label">Total Cards:</span>
+                                    <span id="user-total-cards" class="stat-value">0</span>
+                                </div>
+                                <div class="stat">
+                                    <span class="stat-label">Collection Value:</span>
+                                    <span id="user-collection-value" class="stat-value">$0.00</span>
+                                </div>
+                                <div class="stat">
+                                    <span class="stat-label">Active Trades:</span>
+                                    <span id="user-active-trades" class="stat-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Trade Offers Section -->
+                <div class="trade-offers-section">
+                    <h3>Trade Offers</h3>
+                    <div class="trade-tabs">
+                        <button id="incoming-trades-tab" class="trade-tab active">Incoming (<span id="incoming-count">0</span>)</button>
+                        <button id="outgoing-trades-tab" class="trade-tab">Outgoing (<span id="outgoing-count">0</span>)</button>
+                    </div>
+                    <div id="trade-offers-container" class="trade-offers-container"></div>
+                </div>
+                
+                <!-- Friends List -->
+                <div class="friends-list-section">
+                    <h3>Your Friends</h3>
+                    <div id="friends-list" class="friends-list"></div>
+                </div>
+                
+                <!-- Account Actions -->
+                <div class="user-actions">
+                    <h3>Account Actions</h3>
+                    <div class="action-buttons">
+                        <button id="export-collection-btn" class="action-btn">Export Collection</button>
+                        <button id="import-collection-btn" class="action-btn">Import Collection</button>
+                        <button id="clear-collection-btn" class="action-btn danger">Clear Collection</button>
+                        <button id="switch-user-btn" class="action-btn">Switch User</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Friend Collection Modal -->
+        <div id="friend-collection-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="friend-collection-title">Friend's Collection</h3>
+                    <span class="close" id="friend-collection-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="friend-collection-controls">
+                        <div class="search-container">
+                            <input type="text" id="friend-collection-search" placeholder="Search friend's collection...">
+                            <button id="friend-collection-search-btn">Search</button>
+                        </div>
+                        <div class="collection-stats">
+                            <span id="friend-collection-count">0 cards</span>
+                            <span id="friend-collection-value">$0.00 total value</span>
+                        </div>
+                    </div>
+                    <div id="friend-collection-grid" class="card-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trade Offer Modal -->
+        <div id="trade-offer-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="trade-offer-title">Create Trade Offer</h3>
+                    <span class="close" id="trade-offer-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="trade-offer-content">
+                        <div class="trade-section">
+                            <h4>You're offering:</h4>
+                            <div id="your-trade-cards" class="trade-cards-container"></div>
+                            <button id="add-your-cards-btn" class="action-btn">Add Your Cards</button>
+                        </div>
+                        <div class="trade-section">
+                            <h4>You want:</h4>
+                            <div id="wanted-trade-cards" class="trade-cards-container"></div>
+                        </div>
+                    </div>
+                    <div class="trade-actions">
+                        <button id="send-trade-offer-btn" class="action-btn">Send Trade Offer</button>
+                        <button id="cancel-trade-btn" class="action-btn danger">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Your Collection Modal for Trading -->
+        <div id="your-collection-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Select Cards to Offer</h3>
+                    <span class="close" id="your-collection-close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="your-collection-controls">
+                        <div class="search-container">
+                            <input type="text" id="your-collection-search" placeholder="Search your collection...">
+                            <button id="your-collection-search-btn">Search</button>
+                        </div>
+                    </div>
+                    <div id="your-collection-grid" class="card-grid"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Profile Page -->
+        <div id="profile-page" class="page">
+            <div class="profile-header">
+                <h2>Profile Customization</h2>
+                <p>Customize your profile with MTG card artwork</p>
+            </div>
+            
+            <div class="profile-content">
+                <!-- Current Profile Display -->
+                <div class="current-profile-section">
+                    <h3>Current Profile</h3>
+                    <div class="profile-preview">
+                        <div class="profile-avatar-large">
+                            <img id="current-profile-image" src="" alt="Profile Picture" style="display: none;">
+                            <span id="current-profile-initial">U</span>
+                        </div>
+                        <div class="profile-info">
+                            <h4 id="profile-username">Username</h4>
+                            <p id="profile-status">Status</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Profile Picture Selection -->
+                <div class="profile-picture-section">
+                    <h3>Change Profile Picture</h3>
+                    <div class="profile-search-container">
+                        <input type="text" id="profile-card-search" placeholder="Search for any MTG card artwork...">
+                        <button id="profile-search-btn">Search</button>
+                    </div>
+                    <div id="profile-card-results" class="profile-card-results"></div>
+                </div>
+                
+                <!-- Profile Customization Controls -->
+                <div class="profile-customization-section" style="display: none;">
+                    <h3>Customize Selected Artwork</h3>
+                    <div class="customization-container">
+                        <div class="artwork-preview">
+                            <div class="artwork-container">
+                                <img id="selected-artwork" src="" alt="Selected Card Artwork">
+                                <div class="crop-overlay"></div>
+                            </div>
+                        </div>
+                        <div class="customization-controls">
+                            <div class="control-group">
+                                <label for="artwork-scale">Scale:</label>
+                                <input type="range" id="artwork-scale" min="50" max="200" value="100">
+                                <span id="scale-value">100%</span>
+                            </div>
+                            <div class="control-group">
+                                <label for="artwork-rotation">Rotation:</label>
+                                <input type="range" id="artwork-rotation" min="0" max="360" value="0">
+                                <span id="rotation-value">0°</span>
+                            </div>
+                            <div class="control-group">
+                                <label for="artwork-x">Position X:</label>
+                                <input type="range" id="artwork-x" min="-100" max="100" value="0">
+                                <span id="x-value">0%</span>
+                            </div>
+                            <div class="control-group">
+                                <label for="artwork-y">Position Y:</label>
+                                <input type="range" id="artwork-y" min="-100" max="100" value="0">
+                                <span id="y-value">0%</span>
+                            </div>
+                            <div class="control-buttons">
+                                <button id="reset-artwork-btn" class="action-btn">Reset</button>
+                                <button id="save-profile-btn" class="action-btn primary">Save Profile Picture</button>
+                                <button id="cancel-profile-btn" class="action-btn danger">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Profile Settings -->
+                <div class="profile-settings-section">
+                    <h3>Profile Settings</h3>
+                    <div class="settings-container">
+                        <div class="setting-item">
+                            <label for="profile-display-name">Display Name:</label>
+                            <input type="text" id="profile-display-name" placeholder="Enter display name">
+                        </div>
+                        <div class="setting-item">
+                            <label for="profile-status-message">Status Message:</label>
+                            <input type="text" id="profile-status-message" placeholder="Enter status message">
+                        </div>
+                        <div class="setting-item">
+                            <label for="profile-visibility">Profile Visibility:</label>
+                            <select id="profile-visibility">
+                                <option value="public">Public</option>
+                                <option value="friends">Friends Only</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </div>
+                        <button id="save-profile-settings-btn" class="action-btn">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Storage Location Modal -->
@@ -232,6 +485,14 @@
             </div>
             <div class="modal-body">
                 <p>Adding <span id="modal-card-name"></span> to your collection</p>
+                
+                <!-- Foil Toggle -->
+                <div class="foil-toggle-section">
+                    <label class="foil-toggle">
+                        <input type="checkbox" id="foil-toggle">
+                        <span class="foil-toggle-label">Foil Card</span>
+                    </label>
+                </div>
                 
                 <!-- Custom Storage Input -->
                 <div class="custom-storage-section">
@@ -276,6 +537,51 @@
                 <div class="modal-actions">
                     <button id="confirm-add-to-deck-btn">Add to Deck</button>
                     <button id="cancel-add-to-deck-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Offer Details Modal -->
+    <div id="trade-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="trade-details-title">Trade Offer Details</h3>
+                <span class="close" id="trade-details-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="trade-details-content">
+                    <div class="trade-participants">
+                        <div class="participant">
+                            <h4 id="trade-from-user">From: Username</h4>
+                        </div>
+                        <div class="participant">
+                            <h4 id="trade-to-user">To: Username</h4>
+                        </div>
+                    </div>
+                    
+                    <div class="trade-status-section">
+                        <span id="trade-status-badge" class="trade-status-badge">Status</span>
+                        <span id="trade-created-date" class="trade-date">Created: Date</span>
+                    </div>
+                    
+                    <div class="trade-cards-section">
+                        <div class="trade-cards-column">
+                            <h4>Cards Being Offered:</h4>
+                            <div id="trade-offer-cards" class="trade-cards-display"></div>
+                        </div>
+                        <div class="trade-cards-column">
+                            <h4>Cards Being Requested:</h4>
+                            <div id="trade-want-cards" class="trade-cards-display"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="trade-actions-section">
+                        <button id="accept-trade-btn" class="action-btn primary" style="display: none;">Accept Trade</button>
+                        <button id="decline-trade-btn" class="action-btn danger" style="display: none;">Decline Trade</button>
+                        <button id="cancel-trade-btn" class="action-btn" style="display: none;">Cancel Trade</button>
+                        <button id="close-trade-details-btn" class="action-btn">Close</button>
+                    </div>
                 </div>
             </div>
         </div>

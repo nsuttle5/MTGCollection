@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Button Test</title>
+    <style>
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Button Test</h1>
+    <button id="test-btn">Click Me</button>
+    <button onclick="alert('Inline onclick works!')">Inline Click</button>
+    <div id="output"></div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Test page loaded');
+            
+            const testBtn = document.getElementById('test-btn');
+            if (testBtn) {
+                console.log('Test button found');
+                testBtn.addEventListener('click', () => {
+                    console.log('Test button clicked');
+                    alert('Event listener works!');
+                    document.getElementById('output').innerHTML = 'Button clicked!';
+                });
+            } else {
+                console.error('Test button not found');
+            }
+        });
+    </script>
+</body>
+</html>
