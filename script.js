@@ -379,6 +379,25 @@ class MTGCollectionManager {
         document.getElementById('confirm-add-to-deck-btn').addEventListener('click', () => this.confirmAddToDeck());
         document.getElementById('cancel-add-to-deck-btn').addEventListener('click', () => this.closeAddToDeckModal());
         
+        // Sort functionality
+        document.getElementById('sort-select').addEventListener('change', () => {
+            this.displayCollection();
+        });
+
+        // Custom storage functionality
+        document.getElementById('add-custom-storage-btn').addEventListener('click', () => {
+            this.addCustomStorage();
+        });
+
+        document.getElementById('custom-storage-name').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.addCustomStorage();
+            }
+        });
+
+        // Initialize storage options
+        this.initializeStorageOptions();
+        
         console.log('Event listeners set up successfully');
     }
 
@@ -886,7 +905,8 @@ class MTGCollectionManager {
                 owned: true,
                 quantity: 1,
                 storage: storageLocation,
-                imageUrl: imageUrl
+                imageUrl: imageUrl,
+                dateAdded: new Date().toISOString()
             };
             this.collection.push(card);
             console.log(`Added new card: ${cardName} with price $${tcgPrice.toFixed(2)}`);
@@ -977,13 +997,43 @@ class MTGCollectionManager {
             return;
         }
 
+        // Get current sort option
+        const sortSelect = document.getElementById('sort-select');
+        const sortOption = sortSelect ? sortSelect.value : 'name';
+        
+        // Filter and sort collection
+        const ownedCards = this.collection.filter(card => card.owned);
+        const sortedCards = this.sortCards(ownedCards, sortOption);
+
         grid.innerHTML = '';
-        for (const card of this.collection) {
-            if (card.owned) {
-                const cardElement = await this.createCardElement(card);
-                grid.appendChild(cardElement);
-            }
+        for (const card of sortedCards) {
+            const cardElement = await this.createCardElement(card);
+            grid.appendChild(cardElement);
         }
+    }
+
+    sortCards(cards, sortOption) {
+        return [...cards].sort((a, b) => {
+            switch (sortOption) {
+                case 'name':
+                    return a.name.localeCompare(b.name);
+                case 'name-desc':
+                    return b.name.localeCompare(a.name);
+                case 'price':
+                    return (a.price || 0) - (b.price || 0);
+                case 'price-desc':
+                    return (b.price || 0) - (a.price || 0);
+                case 'set':
+                    return a.set_name.localeCompare(b.set_name);
+                case 'rarity':
+                    const rarityOrder = { 'common': 0, 'uncommon': 1, 'rare': 2, 'mythic': 3 };
+                    return (rarityOrder[a.rarity] || 0) - (rarityOrder[b.rarity] || 0);
+                case 'date-added':
+                    return new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0);
+                default:
+                    return 0;
+            }
+        });
     }
 
     createDeck() {
@@ -1151,19 +1201,19 @@ class MTGCollectionManager {
         // Clear and populate storage locations
         storageContainer.innerHTML = '';
         
-        this.storageLocations.forEach(location => {
-            const cardsInLocation = this.collection.filter(card => card.storage === location && card.owned);
+        const locations = this.getStorageLocations();
+        locations.forEach(location => {
+            const cardsInLocation = this.collection.filter(card => card.storage === location.id && card.owned);
             const locationElement = document.createElement('div');
             locationElement.className = 'storage-location-card';
-            locationElement.onclick = () => this.showStorageDetail(location);
+            locationElement.onclick = () => this.showStorageDetail(location.id);
             
-            const displayName = location.replace('_', ' ').toUpperCase();
             const cardCount = cardsInLocation.length;
             const totalValue = cardsInLocation.reduce((sum, card) => sum + (card.tcgPrice * card.quantity), 0);
             
             locationElement.innerHTML = `
                 <div class="storage-location-header">
-                    <h3>${displayName}</h3>
+                    <h3>${location.name}</h3>
                     <span class="card-count">${cardCount} cards</span>
                 </div>
                 <div class="storage-location-stats">
@@ -1175,7 +1225,7 @@ class MTGCollectionManager {
         });
     }
 
-    showStorageDetail(location) {
+    showStorageDetail(locationId) {
         const storageContainer = document.getElementById('storage-locations');
         const storageDetail = document.getElementById('storage-detail');
         const backButton = document.getElementById('back-to-storage-btn');
@@ -1186,11 +1236,13 @@ class MTGCollectionManager {
         storageContainer.style.display = 'none';
         backButton.style.display = 'block';
         
-        const displayName = location.replace('_', ' ').toUpperCase();
+        const locations = this.getStorageLocations();
+        const location = locations.find(loc => loc.id === locationId);
+        const displayName = location ? location.name : locationId.replace('_', ' ').toUpperCase();
         titleElement.textContent = displayName;
         
         // Get cards in this location
-        const cardsInLocation = this.collection.filter(card => card.storage === location && card.owned);
+        const cardsInLocation = this.collection.filter(card => card.storage === locationId && card.owned);
         
         // Clear and populate cards
         contentElement.innerHTML = '';
@@ -1203,6 +1255,126 @@ class MTGCollectionManager {
         cardsInLocation.forEach(async (card) => {
             const cardElement = await this.createCardElement(card);
             contentElement.appendChild(cardElement);
+        });
+    }
+
+    // Custom Storage Management
+    getStorageLocations() {
+        const storageKey = this.userManager.getUserStorageKey('storage_locations');
+        const defaultLocations = [
+            { id: 'big_white_container', name: 'Big White Container', isCustom: false },
+            { id: 'jbm_deck', name: 'JBM Deck', isCustom: false },
+            { id: 'red_binder', name: 'Red Binder', isCustom: false },
+            { id: 'blue_binder', name: 'Blue Binder', isCustom: false },
+            { id: 'deck_box_1', name: 'Deck Box 1', isCustom: false },
+            { id: 'deck_box_2', name: 'Deck Box 2', isCustom: false },
+            { id: 'trade_binder', name: 'Trade Binder', isCustom: false }
+        ];
+        
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                return [...defaultLocations, ...parsed.filter(loc => loc.isCustom)];
+            } catch (e) {
+                console.error('Error parsing storage locations:', e);
+                return defaultLocations;
+            }
+        }
+        return defaultLocations;
+    }
+
+    saveStorageLocations(locations) {
+        const storageKey = this.userManager.getUserStorageKey('storage_locations');
+        const customLocations = locations.filter(loc => loc.isCustom);
+        localStorage.setItem(storageKey, JSON.stringify(customLocations));
+    }
+
+    addCustomStorage() {
+        const nameInput = document.getElementById('custom-storage-name');
+        const name = nameInput.value.trim();
+        
+        if (!name) {
+            alert('Please enter a storage location name');
+            return;
+        }
+        
+        const locations = this.getStorageLocations();
+        const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        
+        // Check if already exists
+        if (locations.some(loc => loc.id === id)) {
+            alert('A storage location with this name already exists');
+            return;
+        }
+        
+        const newLocation = {
+            id: id,
+            name: name,
+            isCustom: true,
+            dateCreated: new Date().toISOString()
+        };
+        
+        locations.push(newLocation);
+        this.saveStorageLocations(locations);
+        this.initializeStorageOptions();
+        nameInput.value = '';
+        
+        // Add to collection if there's a pending card
+        if (this.pendingCard) {
+            this.addCardWithStorage(id);
+        }
+    }
+
+    deleteCustomStorage(locationId) {
+        const locations = this.getStorageLocations();
+        const location = locations.find(loc => loc.id === locationId);
+        
+        if (!location || !location.isCustom) {
+            alert('Cannot delete default storage locations');
+            return;
+        }
+        
+        if (confirm(`Are you sure you want to delete "${location.name}"? This will not remove cards from your collection.`)) {
+            const filteredLocations = locations.filter(loc => loc.id !== locationId);
+            this.saveStorageLocations(filteredLocations);
+            this.initializeStorageOptions();
+            this.displayStorageLocations();
+        }
+    }
+
+    initializeStorageOptions() {
+        const container = document.getElementById('storage-options-container');
+        if (!container) return;
+        
+        const locations = this.getStorageLocations();
+        container.innerHTML = '';
+        
+        locations.forEach(location => {
+            const button = document.createElement('button');
+            button.className = 'storage-option';
+            button.dataset.location = location.id;
+            button.textContent = location.name;
+            
+            if (location.isCustom) {
+                button.classList.add('custom-location');
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-storage';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.title = 'Delete this storage location';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    this.deleteCustomStorage(location.id);
+                };
+                button.appendChild(deleteBtn);
+            }
+            
+            button.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete-storage')) return;
+                this.addCardWithStorage(location.id);
+            });
+            
+            container.appendChild(button);
         });
     }
 }
