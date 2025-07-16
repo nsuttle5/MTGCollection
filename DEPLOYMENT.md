@@ -5,6 +5,7 @@
 ### Option 1: GitHub Pages (Recommended)
 
 1. **Create GitHub Repository:**
+
    - Go to GitHub.com
    - Click "New Repository"
    - Name it "MTGCollection" or similar
@@ -12,6 +13,7 @@
    - Don't initialize with README (you already have one)
 
 2. **Upload Your Files:**
+
    ```bash
    cd "C:\Users\Nicolas\Documents\Github\MTGCollection"
    git init
@@ -23,6 +25,7 @@
    ```
 
 3. **Enable GitHub Pages:**
+
    - Go to repository Settings
    - Scroll to "Pages" section
    - Source: "Deploy from a branch"
@@ -60,6 +63,7 @@
 ## Custom Domain (Optional)
 
 After deploying, you can add a custom domain:
+
 - GitHub Pages: Add CNAME file with your domain
 - Netlify: Go to Domain settings
 - Vercel: Go to Domain settings
@@ -67,6 +71,7 @@ After deploying, you can add a custom domain:
 ## File Structure Check
 
 Make sure you have these files in your root directory:
+
 - ✅ index.html (entry point)
 - ✅ auth.html
 - ✅ main.html

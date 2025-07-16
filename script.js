@@ -91,15 +91,6 @@ class MTGCollectionManager {
         this.userManager = new UserSessionManager();
         this.collection = this.loadCollection();
         this.decks = this.loadDecks();
-        this.storageLocations = [
-            'big_white_container',
-            'jbm_deck',
-            'red_binder',
-            'blue_binder',
-            'deck_box_1',
-            'deck_box_2',
-            'trade_binder'
-        ];
         this.currentPage = 'collection';
         this.pendingCard = null; // For modal functionality
         this.availableSets = []; // Cache for sets
@@ -397,6 +388,21 @@ class MTGCollectionManager {
 
         // Initialize storage options
         this.initializeStorageOptions();
+
+        // Storage management functionality
+        document.getElementById('toggle-storage-management').addEventListener('click', () => {
+            this.toggleStorageManagement();
+        });
+
+        document.getElementById('add-storage-location-btn').addEventListener('click', () => {
+            this.addStorageLocationFromPage();
+        });
+
+        document.getElementById('storage-page-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.addStorageLocationFromPage();
+            }
+        });
         
         console.log('Event listeners set up successfully');
     }
@@ -875,7 +881,7 @@ class MTGCollectionManager {
         document.getElementById('storage-location').value = '';
     }
 
-    addCardToCollectionSpecific(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, storageLocation = 'big_white_container') {
+    addCardToCollectionSpecific(cardIdentifier, cardName, setCode, collectorNumber, imageUrl, storageLocation = 'box_1') {
         // Create unique identifier for this specific printing
         const uniqueId = `${cardName}|||${setCode}|||${collectorNumber}`;
         let card = this.collection.find(c => `${c.name}|||${c.setCode || ''}|||${c.collectorNumber || ''}` === uniqueId);
@@ -962,7 +968,7 @@ class MTGCollectionManager {
                 tcgPrice: Math.random() * 50 + 1, // Random price for demo
                 owned: true,
                 quantity: 1,
-                storage: storageLocation || 'big_white_container',
+                storage: storageLocation || 'box_1',
                 imageUrl: imageUrl
             };
             this.collection.push(card);
@@ -987,9 +993,7 @@ class MTGCollectionManager {
             this.refreshCurrentView();
             console.log(`Removed ${cardName} from collection`);
         }
-    }
-
-    async displayCollection() {
+    }    async displayCollection() {
         const grid = document.getElementById('collection-grid');
         
         if (this.collection.length === 0) {
@@ -1000,7 +1004,7 @@ class MTGCollectionManager {
         // Get current sort option
         const sortSelect = document.getElementById('sort-select');
         const sortOption = sortSelect ? sortSelect.value : 'name';
-        
+
         // Filter and sort collection
         const ownedCards = this.collection.filter(card => card.owned);
         const sortedCards = this.sortCards(ownedCards, sortOption);
@@ -1020,11 +1024,11 @@ class MTGCollectionManager {
                 case 'name-desc':
                     return b.name.localeCompare(a.name);
                 case 'price':
-                    return (a.price || 0) - (b.price || 0);
+                    return (a.tcgPrice || 0) - (b.tcgPrice || 0);
                 case 'price-desc':
-                    return (b.price || 0) - (a.price || 0);
+                    return (b.tcgPrice || 0) - (a.tcgPrice || 0);
                 case 'set':
-                    return a.set_name.localeCompare(b.set_name);
+                    return (a.setCode || '').localeCompare(b.setCode || '');
                 case 'rarity':
                     const rarityOrder = { 'common': 0, 'uncommon': 1, 'rare': 2, 'mythic': 3 };
                     return (rarityOrder[a.rarity] || 0) - (rarityOrder[b.rarity] || 0);
@@ -1262,13 +1266,9 @@ class MTGCollectionManager {
     getStorageLocations() {
         const storageKey = this.userManager.getUserStorageKey('storage_locations');
         const defaultLocations = [
-            { id: 'big_white_container', name: 'Big White Container', isCustom: false },
-            { id: 'jbm_deck', name: 'JBM Deck', isCustom: false },
-            { id: 'red_binder', name: 'Red Binder', isCustom: false },
-            { id: 'blue_binder', name: 'Blue Binder', isCustom: false },
-            { id: 'deck_box_1', name: 'Deck Box 1', isCustom: false },
-            { id: 'deck_box_2', name: 'Deck Box 2', isCustom: false },
-            { id: 'trade_binder', name: 'Trade Binder', isCustom: false }
+            { id: 'box_1', name: 'Box 1', isCustom: false },
+            { id: 'box_2', name: 'Box 2', isCustom: false },
+            { id: 'trading_binder', name: 'Trading Binder', isCustom: false }
         ];
         
         const saved = localStorage.getItem(storageKey);
@@ -1376,6 +1376,83 @@ class MTGCollectionManager {
             
             container.appendChild(button);
         });
+    }
+
+    toggleStorageManagement() {
+        const panel = document.getElementById('storage-management-panel');
+        const button = document.getElementById('toggle-storage-management');
+        
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            button.textContent = '- Hide Management';
+            button.classList.add('active');
+        } else {
+            panel.style.display = 'none';
+            button.textContent = '+ Add New Location';
+            button.classList.remove('active');
+        }
+    }
+
+    addStorageLocationFromPage() {
+        const input = document.getElementById('storage-page-input');
+        const name = input.value.trim();
+        
+        if (!name) {
+            alert('Please enter a storage location name');
+            return;
+        }
+        
+        const locations = this.getStorageLocations();
+        const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        
+        // Check if already exists
+        if (locations.some(loc => loc.id === id)) {
+            alert('A storage location with this name already exists');
+            return;
+        }
+        
+        const newLocation = {
+            id: id,
+            name: name,
+            isCustom: true,
+            dateCreated: new Date().toISOString()
+        };
+        
+        locations.push(newLocation);
+        this.saveStorageLocations(locations);
+        this.displayStorage(); // Refresh the storage display
+        this.initializeStorageOptions(); // Update modal options
+        
+        input.value = '';
+        
+        // Show success message
+        this.showSuccessMessage(`Storage location "${name}" created successfully!`);
+    }
+
+    showSuccessMessage(message) {
+        // Create a temporary success message
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-message';
+        successDiv.textContent = message;
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        `;
+        
+        document.body.appendChild(successDiv);
+        
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.parentNode.removeChild(successDiv);
+            }
+        }, 3000);
     }
 }
 
