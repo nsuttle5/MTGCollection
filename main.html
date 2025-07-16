@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Collection Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>MTG Collection Manager</h1>
+        <nav>
+            <button id="collection-tab" class="tab-button active">Collection</button>
+            <button id="storage-tab" class="tab-button">Storage</button>
+            <button id="decks-tab" class="tab-button">Decks</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Collection Page -->
+        <div id="collection-page" class="page active">
+            <div class="controls">
+                <div class="search-container">
+                    <input type="text" id="card-search" placeholder="Search for cards...">
+                    <button id="search-btn">Search</button>
+                    <button id="clear-search-btn">Clear</button>
+                    <button id="advanced-search-btn">Advanced Search</button>
+                </div>
+                <div class="quick-add-container">
+                    <input type="text" id="quick-add-name" placeholder="Quick add card by name">
+                    <button id="quick-add-btn">Quick Add</button>
+                </div>
+            </div>
+            
+            <!-- Advanced Search Panel -->
+            <div id="advanced-search-panel" class="advanced-search-panel">
+                <div class="advanced-search-content">
+                    <h3>Advanced Search</h3>
+                    <div class="advanced-search-row">
+                        <div class="search-field">
+                            <label for="adv-card-name">Card Name:</label>
+                            <input type="text" id="adv-card-name" placeholder="Enter card name">
+                        </div>
+                        <div class="search-field">
+                            <label for="adv-set">Set:</label>
+                            <select id="adv-set">
+                                <option value="">All Sets</option>
+                                <!-- Sets will be populated dynamically -->
+                            </select>
+                        </div>
+                        <div class="search-field">
+                            <label for="adv-collector-number">Collector Number:</label>
+                            <input type="text" id="adv-collector-number" placeholder="e.g., 237">
+                        </div>
+                    </div>
+                    <div class="advanced-search-row">
+                        <div class="search-field">
+                            <label for="adv-rarity">Rarity:</label>
+                            <select id="adv-rarity">
+                                <option value="">All Rarities</option>
+                                <option value="common">Common</option>
+                                <option value="uncommon">Uncommon</option>
+                                <option value="rare">Rare</option>
+                                <option value="mythic">Mythic</option>
+                            </select>
+                        </div>
+                        <div class="search-field">
+                            <label for="adv-owned">Ownership:</label>
+                            <select id="adv-owned">
+                                <option value="">All Cards</option>
+                                <option value="owned">Cards I Own</option>
+                                <option value="not-owned">Cards I Don't Own</option>
+                            </select>
+                        </div>
+                        <div class="search-field">
+                            <label for="adv-price-range">Price Range:</label>
+                            <div class="price-range">
+                                <input type="number" id="adv-price-min" placeholder="Min" step="0.01">
+                                <span>to</span>
+                                <input type="number" id="adv-price-max" placeholder="Max" step="0.01">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="advanced-search-actions">
+                        <button id="adv-search-btn">Search</button>
+                        <button id="adv-clear-btn">Clear Filters</button>
+                        <button id="adv-close-btn">Close</button>
+                    </div>
+                </div>
+            </div>
+            <div id="collection-grid" class="card-grid"></div>
+        </div>
+
+        <!-- Storage Page -->
+        <div id="storage-page" class="page">
+            <div class="storage-overview">
+                <h2>Storage Locations</h2>
+                <div id="storage-locations" class="storage-locations-grid"></div>
+            </div>
+            <div id="storage-detail" class="storage-detail">
+                <div class="storage-detail-header">
+                    <h3 id="storage-detail-title">Select a storage location</h3>
+                    <button id="back-to-storage-btn" class="back-btn" style="display: none;">← Back to Storage</button>
+                </div>
+                <div id="storage-detail-content" class="card-grid"></div>
+            </div>
+        </div>
+
+        <!-- Decks Page -->
+        <div id="decks-page" class="page">
+            <div class="deck-controls">
+                <div class="deck-creation-row">
+                    <input type="text" id="new-deck-name" placeholder="Deck name">
+                    <select id="new-deck-format">
+                        <option value="">Select Format</option>
+                        <option value="commander">Commander</option>
+                        <option value="standard">Standard</option>
+                        <option value="pioneer">Pioneer</option>
+                        <option value="modern">Modern</option>
+                        <option value="legacy">Legacy</option>
+                        <option value="vintage">Vintage</option>
+                        <option value="pauper">Pauper</option>
+                        <option value="brawl">Brawl</option>
+                        <option value="historic">Historic</option>
+                        <option value="casual">Casual</option>
+                    </select>
+                    <button id="create-deck-btn">Create Deck</button>
+                </div>
+                <div class="deck-import-row">
+                    <input type="text" id="import-deck-url" placeholder="Paste Archidekt/Moxfield URL or deck list">
+                    <button id="import-deck-btn">Import Deck</button>
+                </div>
+            </div>
+            
+            <div id="deck-view-container">
+                <!-- Deck List View -->
+                <div id="deck-list-view" class="deck-list-view">
+                    <div id="decks-container"></div>
+                </div>
+                
+                <!-- Deck Detail View -->
+                <div id="deck-detail-view" class="deck-detail-view" style="display: none;">
+                    <div class="deck-detail-header">
+                        <div class="deck-detail-title">
+                            <h3 id="deck-detail-name"></h3>
+                            <span id="deck-detail-format" class="deck-format-badge"></span>
+                        </div>
+                        <div class="deck-detail-actions">
+                            <button id="back-to-decks-btn" class="back-btn">← Back to Decks</button>
+                            <button id="edit-deck-btn" class="edit-btn">Edit Deck</button>
+                            <button id="delete-deck-detail-btn" class="delete-btn">Delete Deck</button>
+                        </div>
+                    </div>
+                    
+                    <div class="deck-detail-stats">
+                        <div class="deck-stat">
+                            <span class="deck-stat-label">Total Cards</span>
+                            <span id="deck-total-cards" class="deck-stat-value">0</span>
+                        </div>
+                        <div class="deck-stat">
+                            <span class="deck-stat-label">Unique Cards</span>
+                            <span id="deck-unique-cards" class="deck-stat-value">0</span>
+                        </div>
+                        <div class="deck-stat">
+                            <span class="deck-stat-label">Total Value</span>
+                            <span id="deck-total-value" class="deck-stat-value">$0.00</span>
+                        </div>
+                        <div class="deck-stat">
+                            <span class="deck-stat-label">Owned Cards</span>
+                            <span id="deck-owned-cards" class="deck-stat-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="deck-card-management">
+                        <div class="add-card-to-deck">
+                            <input type="text" id="add-card-to-deck-search" placeholder="Search for cards to add...">
+                            <button id="add-card-to-deck-btn">Search</button>
+                        </div>
+                        <div id="deck-add-card-results" class="deck-add-card-results"></div>
+                    </div>
+                    
+                    <div id="deck-detail-content" class="deck-cards-grid"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Storage Location Modal -->
+    <div id="storage-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Storage Location</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Adding <span id="modal-card-name"></span> to your collection</p>
+                <div class="storage-options">
+                    <button class="storage-option" data-location="big_white_container">Big White Container</button>
+                    <button class="storage-option" data-location="jbm_deck">JBM Deck</button>
+                    <button class="storage-option" data-location="red_binder">Red Binder</button>
+                    <button class="storage-option" data-location="blue_binder">Blue Binder</button>
+                    <button class="storage-option" data-location="deck_box_1">Deck Box 1</button>
+                    <button class="storage-option" data-location="deck_box_2">Deck Box 2</button>
+                    <button class="storage-option" data-location="trade_binder">Trade Binder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add to Deck Modal -->
+    <div id="add-to-deck-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add to Deck</h3>
+                <span class="close-deck-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Adding <span id="modal-deck-card-name"></span> to a deck</p>
+                <div class="deck-selection">
+                    <label for="select-deck">Choose Deck:</label>
+                    <select id="select-deck">
+                        <option value="">Select a deck</option>
+                        <!-- Decks will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="card-quantity">
+                    <label for="card-quantity">Quantity:</label>
+                    <input type="number" id="card-quantity" value="1" min="1" max="20">
+                </div>
+                <div class="modal-actions">
+                    <button id="confirm-add-to-deck-btn">Add to Deck</button>
+                    <button id="cancel-add-to-deck-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

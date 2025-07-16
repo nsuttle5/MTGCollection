@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+</head>
+<body>
+    <button id="test-btn">Test Button</button>
+    <div id="output"></div>
+
+    <script>
+        console.log('Script loaded');
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded');
+            
+            const button = document.getElementById('test-btn');
+            console.log('Button element:', button);
+            
+            if (button) {
+                button.addEventListener('click', function() {
+                    console.log('Button clicked!');
+                    document.getElementById('output').innerHTML = 'Button works!';
+                });
+                console.log('Event listener attached');
+            } else {
+                console.log('Button not found');
+            }
+        });
+    </script>
+</body>
+</html>

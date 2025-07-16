@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Collection Manager</title>
+</head>
+<body>
+    <script>
+        // Check if user is already authenticated
+        const session = sessionStorage.getItem('mtg_session');
+        if (session) {
+            const sessionData = JSON.parse(session);
+            const loginTime = new Date(sessionData.loginTime);
+            const now = new Date();
+            const hoursSinceLogin = (now - loginTime) / (1000 * 60 * 60);
+            
+            if (hoursSinceLogin < 24) {
+                // Session is still valid, redirect to app
+                window.location.href = 'main.html';
+            } else {
+                // Session expired, redirect to auth
+                sessionStorage.removeItem('mtg_session');
+                window.location.href = 'auth.html';
+            }
+        } else {
+            // No session, redirect to auth
+            window.location.href = 'auth.html';
+        }
+    </script>
+</body>
+</html>
